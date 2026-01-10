@@ -1,4 +1,4 @@
-use axum::routing::get;
+use axum::routing::{ get, post };
 use axum::{ Router };
 use log_service::*;
 
@@ -18,6 +18,8 @@ async fn init_listener() -> tokio::net::TcpListener {
 }
 
 fn init_router() -> Router {
-    let router = Router::new().route("/health", get(health));
+    let router = Router::new()
+        .route("/health", get(health))
+        .route("/events", post(event));
     router
 }
