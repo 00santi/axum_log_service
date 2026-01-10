@@ -22,7 +22,7 @@ use chrono::{
 
 
 pub async fn health() -> String {
-    String::from("ok!")
+    String::from("ok!\n")
 }
 
 pub struct AppState {
@@ -54,17 +54,17 @@ impl AppState {
 
 pub async fn event(storage: State<Arc<AppState>>, req: Bytes) -> String {
     if req.len() > 400 {
-        return String::from("expected body length < 400");
+        return String::from("expected body length < 400\n");
     }
 
-    let input: InputEvent = match serde_json::from_slice(&req.to_vec()) {
+    let input: InputEvent = match serde_json::from_slice(&req) {
         Ok(input) => input,
-        _ => return String::from("expected JSON body"),
+        _ => return String::from("expected JSON body\n"),
     };
 
     let event = Event::from(input);
     storage.events.lock().await.push(event);
-    String::from("added body to logs")
+    String::from("added body to logs\n")
 }
 
 #[derive(Deserialize, Serialize)]
