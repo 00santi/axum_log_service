@@ -38,7 +38,10 @@ async fn flush_task(state: Arc<AppState>) {
     loop {
         sleep(state.interval()).await;
 
-        let events: Vec<Event> = { state.events.lock().await.drain(..).collect() };
+        let events: Vec<Event> = {
+            let mut guard = state.events.lock().await;
+            std::mem::take(&mut *guard)
+        };
         let events: Box<[u8]> = events.into_iter().map(|e| format!("{}\n", e).into_bytes()).flatten().collect();
 
         println!("opening file");
