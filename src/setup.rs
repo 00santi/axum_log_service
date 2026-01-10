@@ -2,10 +2,13 @@ use std::path::Path;
 use std::sync::Arc;
 use axum::Router;
 use axum::routing::{get, post};
-use tokio::fs::{File, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use tokio::signal;
-use tokio::time::sleep;
+use tokio::{
+    fs::{File, OpenOptions},
+    io::AsyncWriteExt,
+    signal,
+    time::sleep,
+    sync::Notify,
+};
 use log_service::{event, health, AppState, Event};
 
 pub async fn init_listener() -> tokio::net::TcpListener {
@@ -17,13 +20,15 @@ pub async fn init_listener() -> tokio::net::TcpListener {
 
 pub fn init_router() -> Router {
     let state = Arc::new(AppState::new("logs.txt", 10_000));
+    let shutdown_notifier = Arc::new(Notify::new());
+
     let router = Router::new()
         .route("/health", get(health))
         .route("/events", post(event))
         .with_state(Arc::clone(&state));
 
     tokio::spawn(async move {
-        flush_task(Arc::clone(&state)).await;
+        flush_task(Arc::clone(&state), Arc::clone(&shutdown_notifier)).await;
     });
 
     router
@@ -34,22 +39,27 @@ pub async fn shutdown() {
     println!("\nstarting shutdown");
 }
 
-async fn flush_task(state: Arc<AppState>) {
+async fn flush_task(state: Arc<AppState>, notifier: Arc<Notify>) {
     loop {
-        sleep(state.interval()).await;
-
-        let events: Vec<Event> = {
-            let mut guard = state.events.lock().await;
-            std::mem::take(&mut *guard)
-        };
-        let events: Box<[u8]> = events.into_iter().map(|e| format!("{}\n", e).into_bytes()).flatten().collect();
-
-        println!("opening file");
-        let file = try_opening_file(state.filepath()).await.expect("failed to open file");
-
-        println!("writing to file");
-        try_writing_to_file(file, &events).await.expect("failed writing to file");
+        tokio::select! {
+            _ = sleep(state.interval()) => { flush_buffer(&state).await; }
+            _ = notifier.notified() => { flush_buffer(&state).await; break; }
+        }
     }
+}
+
+async fn flush_buffer(state: &Arc<AppState>) {
+    let events: Vec<Event> = {
+        let mut guard = state.events.lock().await;
+        std::mem::take(&mut *guard)
+    };
+    let events: Box<[u8]> = events.into_iter()
+        .map(|e| format!("{}\n", e).into_bytes())
+        .flatten()
+        .collect();
+
+    let file = try_opening_file(state.filepath()).await.expect("error opening file");
+    try_writing_to_file(file, &events).await.expect("error writing to file");
 }
 
 async fn try_opening_file(path: &Path) -> Result<File, ()> {
