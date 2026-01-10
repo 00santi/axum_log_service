@@ -81,7 +81,7 @@ async fn try_writing_to_file(mut file: File, events: &[u8]) -> Result<(), ()> {
     for i in 1..=3 {
         let result = file.flush().await;
         match result {
-            Ok(_) => break,
+            Ok(_) => return Ok(()),
             Err(_) => {
                 eprintln!("error #{i} trying to flush file. Trying again...");
                 continue;
@@ -89,5 +89,5 @@ async fn try_writing_to_file(mut file: File, events: &[u8]) -> Result<(), ()> {
         }
     }
 
-    Ok(())
+    Err(())
 }
