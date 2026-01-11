@@ -48,7 +48,7 @@ async fn flush_task(state: Arc<AppState>, notifier: Arc<Notify>) {
     }
 }
 
-async fn flush_buffer(state: &Arc<AppState>) {
+async fn flush_buffer(state: &Arc<AppState>) -> Result<(), std::io::Error> {
     let events: Vec<Event> = {
         let mut guard = state.events.lock().await;
         std::mem::take(&mut *guard)
@@ -58,49 +58,60 @@ async fn flush_buffer(state: &Arc<AppState>) {
         .flatten()
         .collect();
 
-    let file = try_opening_file(state.filepath()).await.expect("error opening file");
-    try_writing_to_file(file, &events).await.expect("error writing to file");
+    let file = try_opening_file(state.filepath()).await?;
+    try_writing_to_file(file, &events).await?;
+    Ok(())
 }
 
-async fn try_opening_file(path: &Path) -> Result<File, ()> {
-    for i in 1..=3 {
+async fn try_opening_file(path: &Path) -> Result<File, std::io::Error> {
+    let mut i: u8 = 1;
+
+    let result = loop {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
             .await;
+
         match file {
-            Ok(f) => return Ok(f),
-            Err(_) => {
+            Ok(f) => break Ok(f),
+            Err(e) => if i == 4 {
+                break Err(e);
+            } else {
                 eprintln!("failed attempt #{i} to open file. Trying again...");
             },
         }
-    }
-    Err(())
+
+        i += 1;
+    };
+
+    result
 }
 
-async fn try_writing_to_file(mut file: File, events: &[u8]) -> Result<(), ()> {
-    for i in 1..=3 {
+async fn try_writing_to_file(mut file: File, events: &[u8]) -> Result<(), std::io::Error> {
+    for i in 1..=4 {
         let result = file.write_all(events).await;
         match result {
             Ok(_) => break,
-            Err(_) => {
-                eprintln!("error #{i} trying to write to file. Trying again...");
-                continue;
+            Err(e) => if i == 4 {
+                return Err(e);
+            } else {
+                eprintln!("error #{i} in file write. Trying again...");
             }
         }
     }
 
-    for i in 1..=3 {
+    for i in 1..=4 {
         let result = file.flush().await;
         match result {
-            Ok(_) => return Ok(()),
-            Err(_) => {
-                eprintln!("error #{i} trying to flush file. Trying again...");
-                continue;
+            Ok(_) => break,
+            Err(e) => if i == 4 {
+                return Err(e);
+            } else {
+                eprintln!("error #{i} in file flush. Trying again...");
             }
         }
     }
 
-    Err(())
+    Ok(())
 }
