@@ -1,7 +1,9 @@
 use std::path::Path;
 use std::sync::Arc;
-use axum::Router;
-use axum::routing::{get, post};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use tokio::{
     fs::{File, OpenOptions},
     io::AsyncWriteExt,
@@ -42,8 +44,8 @@ pub async fn shutdown() {
 async fn flush_task(state: Arc<AppState>, notifier: Arc<Notify>) {
     loop {
         tokio::select! {
-            _ = sleep(state.interval()) => { flush_buffer(&state).await.unwrap(); }
-            _ = notifier.notified() => { flush_buffer(&state).await.unwrap(); break; }
+            _ = sleep(state.interval()) => { flush_buffer(&state).await.expect("error writing to file"); }
+            _ = notifier.notified() => { flush_buffer(&state).await.expect("error writing to file"); break; }
         }
     }
 }
