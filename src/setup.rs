@@ -21,17 +21,14 @@ pub async fn init_listener() -> Result<tokio::net::TcpListener, std::io::Error> 
     Ok(listener)
 }
 
-pub fn init_router() -> (Router, JoinHandle<()>) {
-    let state = Arc::new(AppState::new("logs.txt", 10_000));
-    let shutdown_notifier = Arc::new(Notify::new());
-
+pub fn init_router(state: Arc<AppState>, notifier: Arc<Notify>) -> (Router, JoinHandle<()>) {
     let router = Router::new()
         .route("/health", get(health))
         .route("/events", post(event))
         .with_state(Arc::clone(&state));
 
     let handler = tokio::spawn(async move {
-        flush_task(Arc::clone(&state), Arc::clone(&shutdown_notifier)).await;
+        flush_task(Arc::clone(&state), notifier).await.expect("error flushingca");
     });
 
     (router, handler)
@@ -42,16 +39,22 @@ pub async fn shutdown() {
     println!("\nstarting shutdown");
 }
 
-async fn flush_task(state: Arc<AppState>, notifier: Arc<Notify>) {
+async fn flush_task(state: Arc<AppState>, notifier: Arc<Notify>) -> Result<(), std::io::Error> {
     loop {
         tokio::select! {
-            _ = sleep(state.interval()) => { flush_buffer(&state).await.expect("error writing to file"); }
-            _ = notifier.notified() => { flush_buffer(&state).await.expect("error writing to file"); break; }
+            _ = sleep(state.interval()) => {
+                flush_buffer(state.clone()).await?;
+            }
+            _ = notifier.notified() => {
+                flush_buffer(state.clone()).await?;
+                break;
+            }
         }
     }
+    Ok(())
 }
 
-async fn flush_buffer(state: &Arc<AppState>) -> Result<(), std::io::Error> {
+pub async fn flush_buffer(state: Arc<AppState>) -> Result<(), std::io::Error> {
     let events: Vec<Event> = {
         let mut guard = state.events.lock().await;
         std::mem::take(&mut *guard)
