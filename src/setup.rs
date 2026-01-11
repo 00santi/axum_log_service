@@ -11,11 +11,11 @@ use tokio::{
 };
 use log_service::{event, health, AppState, Event};
 
-pub async fn init_listener() -> tokio::net::TcpListener {
+pub async fn init_listener() -> Result<tokio::net::TcpListener, std::io::Error> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 7878));
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("Failed to bind tokio::TcpListener");
+    let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("Using IP: {}   port: {}", addr.ip(), addr.port());
-    listener
+    Ok(listener)
 }
 
 pub fn init_router() -> Router {
@@ -42,8 +42,8 @@ pub async fn shutdown() {
 async fn flush_task(state: Arc<AppState>, notifier: Arc<Notify>) {
     loop {
         tokio::select! {
-            _ = sleep(state.interval()) => { flush_buffer(&state).await; }
-            _ = notifier.notified() => { flush_buffer(&state).await; break; }
+            _ = sleep(state.interval()) => { flush_buffer(&state).await.unwrap(); }
+            _ = notifier.notified() => { flush_buffer(&state).await.unwrap(); break; }
         }
     }
 }
@@ -66,7 +66,7 @@ async fn flush_buffer(state: &Arc<AppState>) -> Result<(), std::io::Error> {
 async fn try_opening_file(path: &Path) -> Result<File, std::io::Error> {
     let mut i: u8 = 1;
 
-    let result = loop {
+    loop {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -83,9 +83,7 @@ async fn try_opening_file(path: &Path) -> Result<File, std::io::Error> {
         }
 
         i += 1;
-    };
-
-    result
+    }
 }
 
 async fn try_writing_to_file(mut file: File, events: &[u8]) -> Result<(), std::io::Error> {
