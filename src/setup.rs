@@ -10,6 +10,7 @@ use tokio::{
     signal,
     time::sleep,
     sync::Notify,
+    task::JoinHandle,
 };
 use log_service::{event, health, AppState, Event};
 
@@ -20,7 +21,7 @@ pub async fn init_listener() -> Result<tokio::net::TcpListener, std::io::Error> 
     Ok(listener)
 }
 
-pub fn init_router() -> Router {
+pub fn init_router() -> (Router, JoinHandle<()>) {
     let state = Arc::new(AppState::new("logs.txt", 10_000));
     let shutdown_notifier = Arc::new(Notify::new());
 
@@ -29,11 +30,11 @@ pub fn init_router() -> Router {
         .route("/events", post(event))
         .with_state(Arc::clone(&state));
 
-    tokio::spawn(async move {
+    let handler = tokio::spawn(async move {
         flush_task(Arc::clone(&state), Arc::clone(&shutdown_notifier)).await;
     });
 
-    router
+    (router, handler)
 }
 
 pub async fn shutdown() {
