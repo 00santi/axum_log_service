@@ -6,6 +6,7 @@ use std::{
 use axum::{
     body::Bytes,
     extract::State,
+    http::StatusCode,
 };
 use serde::{
     Deserialize,
@@ -52,19 +53,19 @@ impl AppState {
     }
 }
 
-pub async fn event(storage: State<Arc<AppState>>, req: Bytes) -> String {
+pub async fn event(storage: State<Arc<AppState>>, req: Bytes) -> (StatusCode, String) {
     if req.len() > 400 {
-        return String::from("expected body length < 400\n");
+        return (StatusCode::PAYLOAD_TOO_LARGE, String::from("expected body length < 400\n"));
     }
 
     let input: InputEvent = match serde_json::from_slice(&req) {
         Ok(input) => input,
-        _ => return String::from("expected JSON body\n"),
+        _ => return (StatusCode::BAD_REQUEST, String::from("expected JSON body\n")),
     };
 
     let event = Event::from(input);
     storage.events.lock().await.push(event);
-    String::from("added body to logs\n")
+    (StatusCode::OK, String::from("added body to logs\n"))
 }
 
 #[derive(Deserialize, Serialize)]
@@ -85,14 +86,14 @@ pub struct Event {
 impl Event {
     fn from(input_event: InputEvent) -> Event {
         let level = match input_event.level {
-            None => Level::INVALID,
+            None => Level::Invalid,
             Some(l) => {
                 match l.to_lowercase().trim() {
                     "info" => Level::Info,
                     "warn" => Level::Warn,
                     "error" => Level::Error,
                     "debug" => Level::Debug,
-                    _ => Level::INVALID
+                    _ => Level::Invalid
                 }
             }
         };
@@ -120,11 +121,11 @@ impl Display for Level {
             Level::Warn => write!(f, "Warn"),
             Level::Error => write!(f, "Error"),
             Level::Debug => write!(f, "Debug"),
-            Level::INVALID => write!(f, "InvalidLevel"),
+            Level::Invalid => write!(f, "InvalidLevel"),
         }
     }
 }
 
 enum Level {
-    Info, Warn, Error, Debug, INVALID,
+    Info, Warn, Error, Debug, Invalid,
 }
